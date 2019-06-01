@@ -4,8 +4,7 @@
 # Written by Y. Andre Wang
 
 # Load packages
-library(shiny); library(lavaan); library(semPlot); library(dplyr)
-library(rhandsontable)
+library(shiny); library(lavaan); library(semPlot); library(rhandsontable)
 
 
 # Define UI ---------------------------------------------------------------
