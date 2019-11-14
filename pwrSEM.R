@@ -12,14 +12,26 @@ library(shiny); library(lavaan); library(semPlot); library(rhandsontable)
 ui <- fluidPage(
   
   
-# *- Set button colors ----------------------------------------------------
+# *- Set button and text colors -------------------------------------------
 
   tags$head(
     tags$style(HTML('#clicks1{background-color:#428BCA; color: white}',
                     '#tab2to3{background-color:#428BCA; color: white}',
                     '#tab3to4{background-color:#428BCA; color: white}',
                     '#autoRes{background-color:#4CAF50; color: white}',
-                    '#sim{background-color:#428BCA; color: white}'))
+                    '#sim{background-color:#428BCA; color: white}',
+                    '#resid_warning{color: red}',
+                    '#resid_std{color: red}',
+                    '#resid_success{color: green}',
+                    '#step3_para_warning{color: red}',
+                    '#step3_para_all{color: red}',
+                    '#step3_dim_warning{color: red}',
+                    '#step3_para_success{color: blue}',
+                    '#step3_model_warning{color: red}',
+                    '#step4_para_warning{color: red}',
+                    '#step4_para_all{color: red}',
+                    '#step4_model_warning{color: red}',
+                    '#step4_dim_warning{color: red}'))
   ),
   
 
@@ -177,7 +189,7 @@ Y ~ X",
             column(2,
                    numericInput(inputId = "rotation", 
                                 label = "Rotation",
-                                value = 1, min = 1, step = 1, 
+                                value = 2, min = 1, step = 1, 
                                 max = 4))
           ),
           
@@ -214,20 +226,37 @@ Y ~ X",
           # Display interactive parameter table
           rHandsontableOutput("AnalysisMod"),
           
-          # Display note
-          helpText('Note that currently the app does not',
-                   'support simultaneous power analysis for more',
-                   'than one parameter. If you select multiple',
-                   'parameters for power analysis, results will',
-                   'be inaccurate.'),
-          
           # Add buttons for various functions (see server() below for details)
           actionButton(inputId = "tab3to2", 
                        label = "Back to Step 2 (Values are Saved)"),
           actionButton(inputId = "autoRes",
                        label = "Set Residual Variances for Me"),
           actionButton(inputId = "tab3to4", 
-                       label = "Confirm Parameter Values")
+                       label = "Confirm Parameter Values"),
+          
+          # Display warning on model detection
+          textOutput("step3_model_warning"),
+          
+          # Display warning on parameter table dimension
+          textOutput("step3_dim_warning"),
+          
+          # Display warning on positive definite matrix
+          textOutput("resid_warning"),
+          
+          # Display warning on standardized metric
+          textOutput("resid_std"),
+          
+          # Display success on setting residuals
+          textOutput("resid_success"),
+          
+          # Display warning on parameter selection
+          textOutput("step3_para_warning"),
+          
+          # Display warning on parameter values
+          textOutput("step3_para_all"),
+          
+          # Display success on parameter selection
+          textOutput("step3_para_success")
           
         ),
 
@@ -237,26 +266,28 @@ Y ~ X",
         tabPanel(
           "4. Estimate Power", value = "tab4",
           br(),
-          column(7,
+          column(12,
                  wellPanel(
                    
                    # Simulation setup
-                   numericInput(inputId = "sampleN", 
-                                label = "Set your sample size", 
-                                value = 200, min = 1, step = 1), 
+                   
                    fluidRow(
-                     column(6,
+                     column(4,
+                            numericInput(inputId = "sampleN", 
+                                         label = "Set your sample size", 
+                                         value = 200, min = 1, step = 1)),
+                     column(4,
                             numericInput(inputId = "p_alpha", 
                                          label = "Set your alpha level", 
                                          value = .05, min = .001, max = 1)),
-                     column(6,
+                     column(4,
                             numericInput(inputId = "seed",
                                          label = "Set seed for simulations",
                                          value = 42))),
                    sliderInput(inputId = "ksim", 
                                label = "Set number of simulations",
                                value = 100, min = 100, step = 100, 
-                               max = 20000),
+                               max = 10000),
                    helpText('We recommend starting with a low number of',
                             'simulations (e.g., 100) to get a rough',
                             'estimate of power before confirming it',
@@ -270,11 +301,23 @@ Y ~ X",
                  )
           ),
           
+          # Display warning on model detection
+          textOutput("step4_model_warning"),
+          
+          # Display warning on parameter table dimension
+          textOutput("step4_dim_warning"),
+          
+          # Display warning on parameter selection
+          textOutput("step4_para_warning"),
+          
+          # Display warning on parameter values
+          textOutput("step4_para_all"),
+          
           # Display results of simulations
           div(tableOutput("power"), style = "font-size:120%"),
           
-          textOutput("powerksim_note"),
-          
+          textOutput("powerksim_CI"),
+
           # Display histograms
           column(10,
                  plotOutput("histop"),
@@ -282,7 +325,6 @@ Y ~ X",
                  br(), br(),
                  plotOutput("histoparam"),
                  textOutput("histoparam_note")
-
           )
         ),
 
@@ -514,10 +556,6 @@ server <- function(input, output, session) {
     updateTabsetPanel(session, "tabby", selected = "tab3")
   })
   
-  observeEvent(input$tab3to4, {
-    updateTabsetPanel(session, "tabby", selected = "tab4")
-  })
-  
   observeEvent(input$tab3to2, {
     updateTabsetPanel(session, "tabby", selected = "tab2")
   })
@@ -531,10 +569,11 @@ server <- function(input, output, session) {
     # Simulate data for visualization
     vis_dat <- as.data.frame(simulateData(input$text1, sample.nobs = 1000), 
                              empirical = T)
-    # Generate diagram
+    
+    # Generate fitted model for diagram display
     vis_fit <- sem(model = input$text1, data = vis_dat, std.lv = stdlv())
     
-    # Generate paraemeter table
+    # Generate parameter table
     am <- parameterTable(vis_fit)[, c(1:4, 8:9)]
     am$effect <- FALSE # By default, no parameter is selected in "Effect"
     
@@ -560,6 +599,9 @@ server <- function(input, output, session) {
     # intercept
     am_idIT <- which(am$op == "~1")
     
+    # labelled parameter
+    am_idLB <- which(am$op == ":=")
+    
     # Add description of each parameter by type
     am$description <- NA
     am$description[am_idRG] <- paste(am$lhs[am_idRG], "is regressed on", 
@@ -577,6 +619,7 @@ server <- function(input, output, session) {
                                      "covaries with residual of", 
                                      am$rhs[am_idRC], sep = " ")
     am$description[am_idIT] <- paste("Intercept of", am$lhs[am_idIT], sep = " ")
+    am$description[am_idLB] <- "Labelled parameter"
     
     # Display parameter type
     am$type <- NA
@@ -587,6 +630,7 @@ server <- function(input, output, session) {
     am$type[am_idTC] <- "covariance"
     am$type[am_idRC] <- "residual covariance"
     am$type[am_idIT] <- "intercept"
+    am$type[am_idLB] <- "labelled parameter"
     
     # Make table more readable
     am <- tidyr::unite(am, "parameter", lhs:rhs, sep = " ")
@@ -641,166 +685,445 @@ server <- function(input, output, session) {
   
   observeEvent(input$autoRes, {
     
-    # Create one parameter table that we use later to obtain psi matrix
-    text1.t <- parameterTable(mg()[[2]])
-    text1.t$free <- 0
-    text1.t[, "ustart"] <- hot_to_r(input$AnalysisMod)[, "Value"]
-    text1.t[is.na(text1.t[, "ustart"] == T), "ustart"] <- 1
+    # Test if model is entered
+    test_model_enter <- try(parameterTable(mg()[[2]]))
     
-    # Create another parameter table that we use later for other matrices
-    PopMod.t <- parameterTable(mg()[[2]])
-    PopMod.t[, "ustart"] <- hot_to_r(input$AnalysisMod)[, "Value"]
-    PopMod.t[is.na(PopMod.t[, "ustart"] == T), "ustart"] <- 0
+    if (inherits(test_model_enter, "try-error")) {
+      output$step3_model_warning <- renderText(
+        "No model detected. Did you enter a model in Step 1?")
+      
+    } else {
+      
+      # Create one parameter table that we use later to obtain psi matrix
+      text1.t <- parameterTable(mg()[[2]])
+      text1.t$free <- 0
+      
+      # Test if dimensions of entered parameter value is correct
+      # (e.g., if users copy a longer column from Excel to the app)
+      test_model_dim <- try(
+        text1.t[, "ustart"] <- hot_to_r(input$AnalysisMod)[, "Value"])
+      
+      if (inherits(test_model_dim, "try-error")) {
+        
+        output$step3_dim_warning <- renderText(paste(
+          "Incorrect dimensions of parameter table. Please regenerate",
+          "the parameter table by resetting the model in Step 1.", sep = " "))
+        
+      } else {
+        
+        # Receive parameter values that users input
+        text1.t[, "ustart"] <- hot_to_r(input$AnalysisMod)[, "Value"]
+        text1.t[is.na(text1.t[, "ustart"] == T), "ustart"] <- 1
+        text1.t <- text1.t[(text1.t$op) != ":=", ] # Exclude labelled parameter
+        
+        # Create another parameter table that we use later for other matrices
+        PopMod.t <- parameterTable(mg()[[2]])
+        PopMod.t[, "ustart"] <- hot_to_r(input$AnalysisMod)[, "Value"]
+        PopMod.t[is.na(PopMod.t[, "ustart"] == T), "ustart"] <- 0
+        PopMod.t <- PopMod.t[(PopMod.t$op) != ":=", ] # Exclude labelled parameter
+        
+        # Use standardized = T in the simulateData function
+        # This will not generate a fully standardized solution
+        # We only do this to obtain the correct psi matrix
+        
+        # Test sigma matrix
+        test_dat_sT <- try(simulateData(text1.t, empirical = T, standardized = T, 
+                                        sample.nobs = 1000))
+        
+        if (inherits(test_dat_sT, "try-error")) {
+          
+          output$resid_std <- renderText(paste(
+            "Residual variances could not be calculated. To automatically set",
+            "residual variances, make sure the parameters you enter are in",
+            "standardized metric.", seq = " ")
+          )
+          output$resid_warning <-
+            renderText("")
+          output$resid_success <-
+            renderText("")
+          
+        } else {
+          
+          dat_sT <- simulateData(text1.t, empirical = T, standardized = T, 
+                                 sample.nobs = 1000)
+          test_samplecov <- try(sem(input$text1, dat_sT, std.lv = T), silent = T)
+          
+        }
+        
+        if (TRUE %in% (abs(hot_to_r(input$AnalysisMod)$Value) > 1)) {
+          
+          output$resid_std <- renderText(paste(
+            "Residual variances could not be calculated. To automatically set",
+            "residual variances, make sure the parameters you enter are in",
+            "standardized metric.", seq = " ")
+          )
+          output$resid_warning <-
+            renderText("")
+          output$resid_success <-
+            renderText("")
+          
+        } else if (inherits(test_samplecov, "try-error")) {
+          
+          output$resid_warning <- renderText(paste(
+            "Residual variances could not be calculated. Make sure the parameter",
+            "values you entered can produce a positive definite matrix.", seq = " ")
+          )
+          output$resid_std <-
+            renderText("")
+          output$resid_success <-
+            renderText("")
+          
+        } else {
+          
+          fit_sT <- sem(input$text1, dat_sT, std.lv = T)
+          
+          # Obtain the latent variable covariance (psi) matrix
+          psi_sT <- inspect(fit_sT, "std")$psi
+          
+          # Assign those values back into the parameter table
+          PopMod.t$ustart[which(
+            PopMod.t$lhs == PopMod.t$rhs & 
+              PopMod.t$lhs %in% lavNames(PopMod.t, type = "lv"))] <- diag(psi_sT)
+          
+          # Use standardized = F to generate data and get the other values we need
+          dat_sF <- simulateData(text1.t, empirical = T, standardized = F, 
+                                 sample.nobs = 1000)
+          fit_sF <- sem(input$text1, dat_sF, std.lv = T)
+          
+          # Get correct residuals for both observed and latent variables
+          lambda_sF <- inspect(fit_sF, "est")$lambda
+          beta_sF <- inspect(fit_sF, "est")$beta
+          modelimpliednoresiduals <- lambda_sF %*% 
+            solve(diag(dim(psi_sT)[1]) - beta_sF) %*% psi_sT %*% 
+            solve(diag(dim(psi_sT)[1]) - t(beta_sF)) %*% t(lambda_sF)
+          residuals <- 1 - diag(modelimpliednoresiduals)
+          
+          # Assign correct residuals back to the parameter table
+          PopMod.t$ustart[which(
+            PopMod.t$lhs == PopMod.t$rhs & 
+              PopMod.t$lhs %in% lavNames(PopMod.t, type = "ov"))] <- residuals
+          
+          mg_sr <- mg()[[1]]
+          
+          if (dim(mg_sr)[1] == length(PopMod.t$ustart)) {
+            mg_sr$Value <- PopMod.t$ustart
+          } else {
+            mg_sr$Value <- c(PopMod.t$ustart, 
+                             rep(NA, abs(dim(mg_sr)[1] - length(PopMod.t$ustart))))
+          }
+          
+          # Render interactive parameter table again with all residuals set
+          output$AnalysisMod <- renderRHandsontable({
+            rhandsontable(mg_sr, rowHeaders = NULL, stretchH = "all", height = 300) %>%
+              hot_col(col = c("Row", "Parameter", "Free", "Description", 
+                              "Type"), readOnly = T) %>%
+              hot_table(highlightCol = T, highlightRow = T) %>%
+              hot_context_menu(allowRowEdit = FALSE, allowColEdit = FALSE)
+          })
+          
+          output$resid_success <-
+            renderText("Residual variances are automatically set.")
+          output$resid_std <-
+            renderText("")
+          output$resid_warning <-
+            renderText("")
+          output$step3_para_all <-
+            renderText("")
+          
+        }
+        
+      }
+      
+    }
     
-    # Use standardized = T in the simulateData function
-    # This will not generate a fully standardized solution
-    # We only do this to obtain the correct psi matrix
-    dat_sT <- simulateData(text1.t, empirical = T, standardized = T, 
-                           sample.nobs = 1000)
-    fit_sT <- sem(input$text1, dat_sT, std.lv = T)
-    
-    # Obtain the latent variable covariance (psi) matrix
-    psi_sT <- inspect(fit_sT, "std")$psi
-    
-    # Assign those values back into the parameter table
-    PopMod.t$ustart[which(
-      PopMod.t$lhs == PopMod.t$rhs & 
-        PopMod.t$lhs %in% lavNames(PopMod.t, type = "lv"))] <- diag(psi_sT)
-    
-    # Use standardized = F to generate data and get the other values we need
-    dat_sF <- simulateData(text1.t, empirical = T, standardized = F, 
-                           sample.nobs = 1000)
-    fit_sF <- sem(input$text1, dat_sF, std.lv = T)
-    
-    # Get correct residuals for both observed and latent variables
-    lambda_sF <- inspect(fit_sF, "est")$lambda
-    beta_sF <- inspect(fit_sF, "est")$beta
-    modelimpliednoresiduals <- lambda_sF %*% 
-      solve(diag(dim(psi_sT)[1]) - beta_sF) %*% psi_sT %*% 
-      solve(diag(dim(psi_sT)[1]) - t(beta_sF)) %*% t(lambda_sF)
-    residuals <- 1 - diag(modelimpliednoresiduals)
-    
-    # Assign correct residuals back to the parameter table
-    PopMod.t$ustart[which(
-      PopMod.t$lhs == PopMod.t$rhs & 
-        PopMod.t$lhs %in% lavNames(PopMod.t, type = "ov"))] <- residuals
-    
-    mg_sr <- mg()[[1]]
-    mg_sr[, "Value"] <- PopMod.t[, "ustart"]
-    
-    # Render interactive parameter table again with all residuals set
-    output$AnalysisMod <- renderRHandsontable({
-      rhandsontable(mg_sr, rowHeaders = NULL, stretchH = "all", height = 300) %>%
-        hot_col(col = c("Row", "Parameter", "Free", "Description", 
-                        "Type"), readOnly = T) %>%
-        hot_table(highlightCol = T, highlightRow = T) %>%
-        hot_context_menu(allowRowEdit = FALSE, allowColEdit = FALSE)
-    })
   })
   
 
-# Events reactive to "Estimate Power via Simulations" in Step 4 -----------
+# Events reactive to "Confirm Parameter Values" in Step 3 -----------------
 
+  observeEvent(input$tab3to4, {
+    
+    # Test if model is entered
+    test_model_enter <- try(parameterTable(mg()[[2]]))
+    
+    if (inherits(test_model_enter, "try-error")) {
+      output$step3_model_warning <- renderText(
+        "No model detected. Did you enter a model in Step 1?")
+      
+    } else {
+      
+      text1.t <- parameterTable(mg()[[2]])
+      text1.t$free <- 0
+      
+      test_model_dim <- try(
+        text1.t[, "ustart"] <- hot_to_r(input$AnalysisMod)[, "Value"])
+      
+    }
+      
+    if (inherits(test_model_dim, "try-error")) {
+      
+      output$step3_dim_warning <- renderText(paste(
+        "Incorrect dimensions of parameter table. Please regenerate",
+        "the parameter table by resetting the model in Step 1.", sep = " "))
+      output$step3_model_warning <-
+        renderText("")
+      
+    } else if (TRUE %in% is.na(hot_to_r(input$AnalysisMod)$Value)) {
+      
+      output$step3_para_all <- 
+        renderText("All parameter values need to be specified.")
+      output$step3_model_warning <-
+        renderText("")
+      output$step3_dim_warning <-
+        renderText("")
+      output$step3_para_warning <-
+        renderText("")
+      output$step3_para_success <- 
+        renderText("")
+      output$step4_para_warning <- 
+        renderText("")
+      
+    } else if (!(TRUE %in% hot_to_r(input$AnalysisMod)$Effect)) {
+      
+      output$step3_para_warning <- 
+        renderText("Please select at least one parameter as the target effect.")
+      output$step3_model_warning <-
+        renderText("")
+      output$step3_dim_warning <-
+        renderText("")
+      output$step3_para_success <- 
+        renderText("")
+      output$step3_para_all <- 
+        renderText("")
+      output$step4_para_all <- 
+        renderText("")
+      
+    } else {
+      
+      updateTabsetPanel(session, "tabby", selected = "tab4")
+      output$step3_para_success <- 
+        renderText("Parameter values confirmed.")
+      output$step3_model_warning <-
+        renderText("")
+      output$step3_dim_warning <-
+        renderText("")
+      output$step3_para_warning <- 
+        renderText("")
+      output$step3_para_all <- 
+        renderText("")
+      output$step4_para_warning <- 
+        renderText("")
+      output$step4_para_all <- 
+        renderText("")
+    }
+
+})
+  
+  # Events reactive to "Estimate Power via Simulations" in Step 4 -----------
+  
   observeEvent(input$sim, {
-    
-    # Create dataframe to store results
-    results <- NULL
-    
-    # Set simulation seed based on user input
-    set.seed(input$seed)
-    
-    # Define population model and target parameter based on user input
-    PopMod.t <- parameterTable(mg()[[2]])
-    PopMod.t[, "ustart"] <- hot_to_r(input$AnalysisMod)[, "Value"]
-    target <- which(hot_to_r(input$AnalysisMod)$Effect == TRUE)
-    
-    # Set progress bar
-    withProgress(message = 'Simulating', value = 0, {
       
-      # Loop by iteration
-      for (i in 1:input$ksim) {
+      # Test if model is entered
+      test_model_enter <- try(parameterTable(mg()[[2]]))
+      
+      if (inherits(test_model_enter, "try-error")) {
+        output$step4_model_warning <- renderText(
+          "No model detected. Did you enter a model in Step 1?")
         
-        # Simulate and store data based on sample size input
-        data <- simulateData(PopMod.t, sample.nobs = input$sampleN)
-        data <- as.data.frame(data)
+      } else {
         
-        # Fit analysis model to data
-        fit <- sem(model = input$text1, data = data, std.lv = stdlv())
+        text1.t <- parameterTable(mg()[[2]])
+        text1.t$free <- 0
         
-        # Store parameter row
-        results <- rbind(results, parameterEstimates(fit)[target, ])
+        test_model_dim <- try(
+          text1.t[, "ustart"] <- hot_to_r(input$AnalysisMod)[, "Value"])
         
-        # Display progress bar
-        incProgress(1/input$ksim, detail = paste("iteration", i, "of", 
-                                                 input$ksim))
-      } 
+      }
       
-      results$ID <- 1:input$ksim
-      
-      # Calculate median of parameter estimates
-      median <- median(results$est)
-      
-      # Convergence rate
-      conv <- (input$ksim - sum(is.na(results$pvalue)))/input$ksim
-      
-      # power (denominator = # of converged cases)
-      power <- length(which(results$pvalue <= input$p_alpha))/(conv * input$ksim)
-      
-      # power (denominator = # all iterations)
-      powerksim <- length(which(results$pvalue <= input$p_alpha))/input$ksim
-      
-      # Create table of power analysis results
-      powertable <- data.frame(power, conv)
-      names(powertable) <- c("Power", "Convergence Rate")
-      
-      # Render table of power analysis results
-      output$power <- renderTable({
-        powertable
-      }, digits = 3)
-      
-      # Add note on power based on convergence rate
-      output$powerksim_note <- renderText({
-        paste('If nonconverged cases are classified as ',
-                 '"failure to reject," your power estimate is ', 
-        powerksim, ".", sep = "")
-      })
-      
-      # Render histogram of p-values
-      output$histop <- renderPlot({
-        hist(results$pvalue, breaks = 50, 
-             col = "#75dbd9", border = "white",
-             xlab = "P-values of the Estimated Parameter",
-             ylab = "Number of Simulated Samples",
-             main = "Histogram of Estimated P-Values",
-             xlim = c(0, 1))
-        abline(v = input$p_alpha, lwd = 2)
-      })
-      
-      # Footnote
-      output$histop_note <- renderText({
-        paste('Vertical solid line indicates alpha level.')
-      })
-      
-      # Render histogram of parameter estimates
-      output$histoparam <- renderPlot({
-        hist(results$est, breaks = 100, 
-             col = "#75AADB", border = "white",
-             xlab = "Estimated Parameter Value",
-             ylab = "Number of Simulated Samples",
-             main = "Histogram of Estimated Parameter Values")
-        abline(v = hot_to_r(input$AnalysisMod)$Value[target], lwd = 2)
-        abline(v = median, lty = 3, lwd = 2)
-      })
-      
-      # Footnote
-      output$histoparam_note <- renderText({
-        paste('Vertical solid line indicates the population value you set for',
-              'the parameter; vertical dotted line indicates the median of',
-              'parameter estimates from the simulated samples.')
-      })
-      
-    })
-  })
+      if (inherits(test_model_dim, "try-error")) {
+        
+        output$step4_dim_warning <- renderText(paste(
+          "Incorrect dimensions of parameter table. Please regenerate",
+          "the parameter table by resetting the model in Step 1.", sep = " "))
+        output$step4_model_warning <-
+          renderText("")
+        
+      } else if (TRUE %in% is.na(hot_to_r(input$AnalysisMod)$Value)) {
+        
+        output$step4_para_all <- 
+          renderText("All parameter values need to be specified.")
+        output$step4_para_warning <-
+          renderText("")
+        
+      } else if (!(TRUE %in% hot_to_r(input$AnalysisMod)$Effect)) {
+        
+        output$step4_para_warning <- 
+          renderText("Please select at least one parameter as the target effect.")
+        output$step4_para_all <- 
+          renderText("")
+        
+      } else {
+        
+        output$step4_para_warning <- 
+          renderText("")
+        output$step4_para_all <- 
+          renderText("")
+        
+        # Create dataframe to store results
+        results <- NULL
+        
+        # Set simulation seed based on user input
+        set.seed(input$seed)
+        
+        # Define population model and target parameter based on user input
+        PopMod.t <- parameterTable(mg()[[2]])
+        PopMod.t[, "ustart"] <- hot_to_r(input$AnalysisMod)[, "Value"]
+        target <- which(hot_to_r(input$AnalysisMod)$Effect == TRUE)
+        
+        # Set progress bar
+        withProgress(message = 'Simulating', value = 0, {
+          
+          # Loop by iteration
+          for (i in 1:input$ksim) {
+            
+            # Simulate and store data based on sample size input
+            data <- simulateData(PopMod.t, sample.nobs = input$sampleN)
+            data <- as.data.frame(data)
+            
+            # Fit analysis model to data
+            fit <- sem(model = input$text1, data = data, std.lv = stdlv())
+            
+            # Store parameter row
+            results <- rbind(results, parameterEstimates(fit)[target, ])
+            
+            # Display progress bar
+            incProgress(1/input$ksim, detail = paste("iteration", i, "of", 
+                                                     input$ksim))
+          }
+          
+          # Convergence rate
+          conv <- (input$ksim - sum(is.na(results$pvalue)))/input$ksim
+          
+          # Create placeholder powertable
+          powertable <- as.data.frame(matrix(NA, nrow = length(target), ncol = 6))
+          colnames(powertable) <- c("Parameter", "Value", "Median", "Power", 
+                                    "Power CI", "Power (All Cases)")
+          
+          # add parameter column in results for later identification
+          results$Parameter <- paste(results$lhs, results$op, 
+                                     results$rhs, sep = " ")
+          
+          lapply(1:length(target), function(i) {
+            
+            # row names of results for a given parameter
+            ii <- seq(from = i, to = dim(results)[1], by = length(target))
+            
+            # number of iterations with significant p-values
+            n_sig <- length(which(results[ii, ]$pvalue <= input$p_alpha))
+            
+            # power (denominator = # all iterations)
+            power <- n_sig/(conv * input$ksim)
+            
+            # power (denominator = # all iterations)
+            powerksim <- n_sig/input$ksim
+            
+            # variance of power across simulations
+            n_sig_var <- power * conv * input$ksim * (1 - power)
+            
+            # lower bound of the 95% CI for power
+            power.ci.lower <- (n_sig - qnorm(input$p_alpha/2, lower.tail = F) * 
+                                 sqrt(n_sig_var/(conv * input$ksim)))/input$ksim
+            
+            # upper bound of the 95% CI for power
+            power.ci.upper <- (n_sig + qnorm(input$p_alpha/2, lower.tail = F) * 
+                                 sqrt(n_sig_var/(conv * input$ksim)))/input$ksim
+            
+            # print CI of power
+            power.ci <- paste("[", round(power.ci.lower, 2), 
+                              ", ", round(power.ci.upper, 2), "]", sep = "")
+            
+            # print power table
+            powertable[i, "Parameter"] <<- results[i, "Parameter"]
+            powertable[i, "Value"] <<- hot_to_r(input$AnalysisMod)$Value[target[i]]
+            powertable[i, "Median"] <<- median(results[ii, ]$est)
+            powertable[i, "Power"] <<- power
+            powertable[i, "Power CI"] <<- power.ci
+            powertable[i, "Power (All Cases)"] <<- powerksim
+          })
+          
+          
+          # Render table of power analysis results
+          output$power <- renderTable({
+            powertable
+          }, digits = 2, align = "l")
+          
+          # Add note on power based on convergence rate
+          output$powerksim_CI <- renderText({
+            paste('Convergence rate is ', round(conv, 3), '. ', 
+                  'Value is the population parameter value as set in Step 3. ',
+                  'Median is the median of simulated estimates of a parameter. ',
+                  'Power is estimated from all simulations with converged ',
+                  'models. Power (All Cases) is estimated from all ', 
+                  'simulations, including those with non-converged models ',
+                  '(which had no parameter estimates and were counted as ',
+                  'failure to reject the null).',
+                  sep = "")
+          })
+          
+          # Select parameter for histogram displays
+          insertUI(
+            selector = "#powerksim_CI",
+            where = "afterEnd",
+            ui = {
+              fluidRow(
+                br(),
+                column(12, selectInput("para_hist", 
+                                       label = "Select parameter to display histograms",
+                                       choices = powertable$Parameter)))
+            }
+          )
+          
+          # Render histogram of p-values
+          output$histop <- renderPlot({
+            hist(results[results$Parameter == input$para_hist, ]$pvalue, 
+                 breaks = 50, 
+                 col = "#75dbd9", border = "white",
+                 xlab = "P-values of the Estimated Parameter",
+                 ylab = "Number of Simulated Samples",
+                 main = "Histogram of Estimated P-Values",
+                 xlim = c(0, 1))
+            abline(v = input$p_alpha, lwd = 2)
+          })
+          
+          # Footnote
+          output$histop_note <- renderText({
+            paste('Vertical solid line indicates alpha level.')
+          })
+          
+          # Render histogram of parameter estimates
+          output$histoparam <- renderPlot({
+            hist(results[results$Parameter == input$para_hist, ]$est, breaks = 100, 
+                 col = "#75AADB", border = "white",
+                 xlab = "Estimated Parameter Value",
+                 ylab = "Number of Simulated Samples",
+                 main = "Histogram of Estimated Parameter Values")
+            abline(v = hot_to_r(input$AnalysisMod)$Value[which(
+              hot_to_r(input$AnalysisMod)$Parameter == input$para_hist)], lwd = 2)
+            abline(v = powertable$Median[which(
+              powertable$Parameter == input$para_hist)], lty = 3, lwd = 2)
+          })
+          
+          # Footnote
+          output$histoparam_note <- renderText({
+            paste('Vertical solid line indicates the population value you set for',
+                  'the parameter; vertical dotted line indicates the median of',
+                  'parameter estimates from the simulated samples.')
+          })
+        })
+      }
+  
+})
+  
 }
 
 
