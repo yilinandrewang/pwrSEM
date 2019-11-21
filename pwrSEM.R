@@ -91,8 +91,8 @@ ui <- fluidPage(
         HTML(paste(
           tags$b('Step 3. Set Parameters'), 
           '. Fill in the "Value" column with your estimate of the ',
-          'population value for each parameter, then check the box in the ',
-          '"Effect" column for the parameter you would like to detect. ',
+          'population value for each parameter, then check the boxes in the ',
+          '"Effect" column for the parameters you would like to detect. ',
           'Click "Confirm Parameter Values" to continue to Step 4.',
           sep = "")),
         style = "padding-bottom: 10px;"
@@ -316,10 +316,14 @@ Y ~ X",
           # Display results of simulations
           div(tableOutput("power"), style = "font-size:120%"),
           
-          textOutput("powerksim_CI"),
-
-          # Display histograms
+          textOutput("powertable_note"),
+          
           column(10,
+                 br(), br(),
+                 
+                 # Display histograms
+                 uiOutput("histograms"),
+                 
                  plotOutput("histop"),
                  textOutput("histop_note"),
                  br(), br(),
@@ -1005,9 +1009,9 @@ server <- function(input, output, session) {
           conv <- (input$ksim - sum(is.na(results$pvalue)))/input$ksim
           
           # Create placeholder powertable
-          powertable <- as.data.frame(matrix(NA, nrow = length(target), ncol = 6))
+          powertable <- as.data.frame(matrix(NA, nrow = length(target), ncol = 5))
           colnames(powertable) <- c("Parameter", "Value", "Median", "Power", 
-                                    "Power CI", "Power (All Cases)")
+                                    "Power (All Cases)")
           
           # add parameter column in results for later identification
           results$Parameter <- paste(results$lhs, results$op, 
@@ -1030,24 +1034,11 @@ server <- function(input, output, session) {
             # variance of power across simulations
             n_sig_var <- power * conv * input$ksim * (1 - power)
             
-            # lower bound of the 95% CI for power
-            power.ci.lower <- (n_sig - qnorm(input$p_alpha/2, lower.tail = F) * 
-                                 sqrt(n_sig_var/(conv * input$ksim)))/input$ksim
-            
-            # upper bound of the 95% CI for power
-            power.ci.upper <- (n_sig + qnorm(input$p_alpha/2, lower.tail = F) * 
-                                 sqrt(n_sig_var/(conv * input$ksim)))/input$ksim
-            
-            # print CI of power
-            power.ci <- paste("[", round(power.ci.lower, 2), 
-                              ", ", round(power.ci.upper, 2), "]", sep = "")
-            
             # print power table
             powertable[i, "Parameter"] <<- results[i, "Parameter"]
             powertable[i, "Value"] <<- hot_to_r(input$AnalysisMod)$Value[target[i]]
             powertable[i, "Median"] <<- median(results[ii, ]$est)
             powertable[i, "Power"] <<- power
-            powertable[i, "Power CI"] <<- power.ci
             powertable[i, "Power (All Cases)"] <<- powerksim
           })
           
@@ -1058,7 +1049,7 @@ server <- function(input, output, session) {
           }, digits = 2, align = "l")
           
           # Add note on power based on convergence rate
-          output$powerksim_CI <- renderText({
+          output$powertable_note <- renderText({
             paste('Convergence rate is ', round(conv, 3), '. ', 
                   'Value is the population parameter value as set in Step 3. ',
                   'Median is the median of simulated estimates of a parameter. ',
@@ -1071,16 +1062,10 @@ server <- function(input, output, session) {
           })
           
           # Select parameter for histogram displays
-          insertUI(
-            selector = "#powerksim_CI",
-            where = "afterEnd",
-            ui = {
-              fluidRow(
-                br(),
-                column(12, selectInput("para_hist", 
-                                       label = "Select parameter to display histograms",
-                                       choices = powertable$Parameter)))
-            }
+          output$histograms <- renderUI(
+            selectInput("para_hist", 
+                        label = "Select parameter to display histograms",
+                        choices = powertable$Parameter)
           )
           
           # Render histogram of p-values
