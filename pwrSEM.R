@@ -48,10 +48,16 @@ ui <- fluidPage(
     column(width = 12,
            h1("pwrSEM"),
            h4("Power Analysis for Parameter Estimation in Structural Equation Modeling"),
-           p("If you find this app useful, please cite:",
-             "Wang, Y. A., & Rhemtulla, M. (2020). Power analysis for ",
-             "parameter estimation in structural equation modeling: ", 
-             "A discussion and tutorial.")
+           HTML(paste(
+             "If you find this app useful, please cite: Wang, Y. A., & ",
+             "Rhemtulla, M. (", tags$a(
+               href = "https://psyarxiv.com/pj67b",
+                    "in press"),
+             "). Power analysis for parameter estimation in structural ",
+             "equation modeling: A discussion and tutorial. ", 
+             tags$i("Advances in Methods and Practices in Psychological Science."),
+             sep = "")),
+           style = "padding-bottom: 10px;"
     )
   ),
   
@@ -418,6 +424,28 @@ Y ~ X",
         tabPanel(
           "Resources", value = "tab6",
           br(),
+          
+          # App Tutorials
+          h4("App Tutorials"),
+          tags$div(
+            HTML(paste(
+              tags$a(href = "https://psyarxiv.com/pj67b",
+                     "Wang and Rhemtulla (in press)"), 
+              ' includes a tutorial of pwrSEM using a simple mediation model.',
+              sep = "")),
+            style = "padding-bottom: 10px;"
+          ),
+          
+          tags$div(
+            HTML(paste(
+              'The ',
+              tags$a(href = "https://osf.io/6m7xz/",
+                     "supplemental material"), 
+              ' includes an additional tutorial using a more complex model ',
+              '(based on Zimmerman, Bandura, & Martinez-Pons, 1992).',
+              sep = "")),
+            style = "padding-bottom: 10px;"
+          ),
           
           # Power to detect model misspecification
           h4("Power to Detect Model Misspecification"),
