@@ -46,7 +46,8 @@ ui <- fluidPage(
 
   fluidRow(
     column(width = 12,
-           h1("pwrSEM"),
+           HTML(paste(tags$strong("pwrSEM", style = "font-size:40px;"),
+           "v0.1.2")),
            h4("Power Analysis for Parameter Estimation in Structural Equation Modeling"),
            HTML(paste(
              "If you find this app useful, please cite: Wang, Y. A., & ",
@@ -764,6 +765,8 @@ server <- function(input, output, session) {
         PopMod.t <- PopMod.t[(PopMod.t$op) != ":=", ] # Exclude labelled parameter
         
         # Test model-implied covariance matrix
+        text1.t <- text1.t[, c("id", "lhs", "op", "rhs", "user", "block", "group", 
+                               "free", "ustart", "exo", "label", "plabel")]
         test_dat_sT <- try(simulateData(text1.t, empirical = T, standardized = T, 
                                         sample.nobs = 1000), silent = T)
         
@@ -1043,6 +1046,9 @@ server <- function(input, output, session) {
           # Define population model and target parameter based on user input
           PopMod.t <- parameterTable(mg()[[2]])
           PopMod.t[, "ustart"] <- hot_to_r(input$AnalysisMod)[, "Value"]
+          PopMod.t <- PopMod.t[, c(
+            "id", "lhs", "op", "rhs", "user", "block", "group", "free", 
+            "ustart", "exo", "label", "plabel")]
           target <- which(hot_to_r(input$AnalysisMod)$Effect == TRUE)
           
           # Set progress bar
