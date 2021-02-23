@@ -15,3 +15,11 @@ Wang, Y. A., & Rhemtulla, M. (in press). Power analysis for parameter estimation
 Source code of the app is available at: [pwrSEM.R](https://github.com/yilinandrewang/pwrSEM/blob/master/pwrSEM.R). Users can run pwrSEM locally in R Studio by downloading the source code file, opening it in R Studio, and then pressing “Run App” (procedure current as of R Studio version 1.2.5001).
 
 Code for the simulation studies reported in the paper is available at: [SimulationCode.R](https://github.com/yilinandrewang/pwrSEM/blob/master/SimulationCode.R).
+
+## Version History
+
+Version 0.1.2 (released February 23, 2021): 
+- Fixed an error where residual variances could not be calculated even when user-entered values were on standardized metric and produced a positive definite model-implied covariance matrix
+- Fixed an error in power estimation where the population values were misrepresented internally, resulting in inaccurate power estimates
+
+Version 0.1.1 (released March 31, 2020): Initial release
