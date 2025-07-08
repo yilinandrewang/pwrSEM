@@ -1,0 +1,18 @@
+services:
+  rstudio:
+    build:
+      context: ./
+    container_name: rstudio
+    restart: on-failure
+    volumes:
+      - ./src:/home/rstudio/src
+    networks:
+      - pwrsem
+    environment:
+      - PASSWORD=rstudio1
+      - DISABLE_AUTH=true
+    ports:
+      - 8852:8787
+
+networks:
+  pwrsem:

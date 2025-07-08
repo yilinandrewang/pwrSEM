@@ -817,70 +817,77 @@ server <- function(input, output, session) {
             I <- diag(dim(beta)[1]) 
             
             # Solve baseline covariance matrix of latent variables (not correct yet)
-            sig <- solve(I - beta) %*% psi %*% solve(I - t(beta))
-            diag(sig) <- 1
-            
-            # Solve for correct psi matrix
-            psi <- (I - beta) %*% sig %*% (I - t(beta))
-            
-            psi2 <- diag(diag(psi))
-            sig2 <- solve(I - beta) %*% psi2 %*% solve(I - t(beta))
-            diag(sig2) <- 1
-            psi <- (I - beta) %*% sig2 %*% (I - t(beta))
-            
-            while(sum(round(psi[lower.tri(psi)], 10)) != 0){
+            siq <- tryCatch(solve(I - beta) %*% psi %*% solve(I - t(beta)), error = function(e) e)
+            if(is(siq, "error")) {
+              output$resid_warning <- renderText(paste(
+                "Residual variances could not be calculated.",
+                geterrmessage()))
+            } else {
+              sig <- solve(I - beta) %*% psi %*% solve(I - t(beta))
+              diag(sig) <- 1
+              
+              # Solve for correct psi matrix
+              psi <- (I - beta) %*% sig %*% (I - t(beta))
+              
               psi2 <- diag(diag(psi))
               sig2 <- solve(I - beta) %*% psi2 %*% solve(I - t(beta))
               diag(sig2) <- 1
               psi <- (I - beta) %*% sig2 %*% (I - t(beta))
+              
+              while(sum(round(psi[lower.tri(psi)], 10)) != 0){
+                psi2 <- diag(diag(psi))
+                sig2 <- solve(I - beta) %*% psi2 %*% solve(I - t(beta))
+                diag(sig2) <- 1
+                psi <- (I - beta) %*% sig2 %*% (I - t(beta))
+              }
+              
+              # Save and label residual values
+              theta <- diag(dim(lambda)[1]) - diag(diag(lambda %*% sig2 %*% t(lambda)))
+              rownames(theta) <- colnames(theta) <- rownames(lambda)
+              
+              # Assign values from theta (note that it only supplies correct residuals
+              # of indicators; the rest will be overwritten by psi matrix next)
+              PopMod.t$ustart[which(PopMod.t$lhs == PopMod.t$rhs & PopMod.t$op == "~~" & 
+                                      PopMod.t$lhs %in% names(diag(theta)))] <- diag(theta)
+              
+              # Identify rows with residuals from psi matrix
+              res_psi <- which(PopMod.t$lhs == PopMod.t$rhs & PopMod.t$op == "~~" &
+                                 PopMod.t$lhs %in% names(diag(psi)))
+              
+              # Assign values from psi back to parameter table
+              PopMod.t$ustart[res_psi][order(
+                match(PopMod.t$lhs[res_psi], names(diag(psi))))] <- diag(psi)
+              
+              # Create parameter table with calculated residuals
+              mg_sr <- mg()[[1]]
+              
+              if (dim(mg_sr)[1] == length(PopMod.t$ustart)) {
+                
+                mg_sr$Value <- PopMod.t$ustart
+                
+              } else {
+                
+                mg_sr$Value <- c(
+                  PopMod.t$ustart, rep(
+                    NA, abs(dim(mg_sr)[1] - length(PopMod.t$ustart))
+                  ))
+                
+              }
+              
+              # Render interactive parameter table again with all residuals set
+              output$AnalysisMod <- renderRHandsontable({
+                rhandsontable(mg_sr, rowHeaders = NULL, stretchH = "all", height = 300) %>%
+                  hot_col(col = c("Row", "Parameter", "Label", "Description", 
+                                  "Type", "Free"), readOnly = T) %>%
+                  hot_table(highlightCol = T, highlightRow = T) %>%
+                  hot_context_menu(allowRowEdit = FALSE, allowColEdit = FALSE)
+              })
+              
+              output$resid_success <-
+                renderText("Residual variances are automatically set.")
+              output$resid_std <- output$resid_warning <- 
+                output$step3_para_all <- renderText("")
             }
-            
-            # Save and label residual values
-            theta <- diag(dim(lambda)[1]) - diag(diag(lambda %*% sig2 %*% t(lambda)))
-            rownames(theta) <- colnames(theta) <- rownames(lambda)
-            
-            # Assign values from theta (note that it only supplies correct residuals
-            # of indicators; the rest will be overwritten by psi matrix next)
-            PopMod.t$ustart[which(PopMod.t$lhs == PopMod.t$rhs & PopMod.t$op == "~~" & 
-                                    PopMod.t$lhs %in% names(diag(theta)))] <- diag(theta)
-            
-            # Identify rows with residuals from psi matrix
-            res_psi <- which(PopMod.t$lhs == PopMod.t$rhs & PopMod.t$op == "~~" &
-                               PopMod.t$lhs %in% names(diag(psi)))
-            
-            # Assign values from psi back to parameter table
-            PopMod.t$ustart[res_psi][order(
-              match(PopMod.t$lhs[res_psi], names(diag(psi))))] <- diag(psi)
-            
-            # Create parameter table with calculated residuals
-            mg_sr <- mg()[[1]]
-            
-            if (dim(mg_sr)[1] == length(PopMod.t$ustart)) {
-              
-              mg_sr$Value <- PopMod.t$ustart
-              
-            } else {
-              
-              mg_sr$Value <- c(
-                PopMod.t$ustart, rep(
-                  NA, abs(dim(mg_sr)[1] - length(PopMod.t$ustart))
-                ))
-              
-            }
-            
-            # Render interactive parameter table again with all residuals set
-            output$AnalysisMod <- renderRHandsontable({
-              rhandsontable(mg_sr, rowHeaders = NULL, stretchH = "all", height = 300) %>%
-                hot_col(col = c("Row", "Parameter", "Label", "Description", 
-                                "Type", "Free"), readOnly = T) %>%
-                hot_table(highlightCol = T, highlightRow = T) %>%
-                hot_context_menu(allowRowEdit = FALSE, allowColEdit = FALSE)
-            })
-            
-            output$resid_success <-
-              renderText("Residual variances are automatically set.")
-            output$resid_std <- output$resid_warning <- 
-              output$step3_para_all <- renderText("")
             
           }
           
@@ -1040,6 +1047,8 @@ server <- function(input, output, session) {
           # Create dataframe to store results
           results <- NULL
           
+          error <- FALSE
+          
           # Set simulation seed based on user input
           set.seed(input$seed)
           
@@ -1062,6 +1071,14 @@ server <- function(input, output, session) {
               data <- as.data.frame(data)
               
               # Fit analysis model to data
+              fit <- tryCatch(sem(model = input$text1, data = data, std.lv = stdlv()),error = function(e) e)
+              if(is(fit, "error")) {
+                output$step4_para_warning <- renderText(paste(
+                  "Simulations could not be run because the model is incorrectly specified.",
+                  geterrmessage()))
+                error <- TRUE
+                break
+              }
               fit <- sem(model = input$text1, data = data, std.lv = stdlv())
               
               # Store parameter row
@@ -1072,146 +1089,148 @@ server <- function(input, output, session) {
                                                        input$ksim))
             }
             
-            # Convergence rate
-            conv <- (input$ksim - sum(is.na(results$pvalue)))/input$ksim
+            if(!error) {
             
-            # Create placeholder powertable and CI tables
-            powertable <- as.data.frame(matrix(NA, nrow = length(target), ncol = 5))
-            colnames(powertable) <- c("Parameter", "Value", "Median", "Power", 
-                                      "Power (All Cases)")
-            
-            ci_table <- as.data.frame(matrix(NA, nrow = length(target), ncol = 3))
-            colnames(ci_table) <- c("Parameter", "est.ci.lower", "est.ci.upper")
-            
-            # add parameter column in results for later identification
-            results$Parameter <- paste(results$lhs, results$op, 
-                                       results$rhs, sep = " ")
-            
-            lapply(1:length(target), function(i) {
+              # Convergence rate
+              conv <- (input$ksim - sum(is.na(results$pvalue)))/input$ksim
               
-              # row names of results for a given parameter
-              ii <- seq(from = i, to = dim(results)[1], by = length(target))
+              # Create placeholder powertable and CI tables
+              powertable <- as.data.frame(matrix(NA, nrow = length(target), ncol = 5))
+              colnames(powertable) <- c("Parameter", "Value", "Median", "Power", 
+                                        "Power (All Cases)")
               
-              # row names of results for a given parameter with non-NA estimates
-              ii.est <- which(is.na(results$est) == F)[which(
-                is.na(results$est) == F) %in% ii]
+              ci_table <- as.data.frame(matrix(NA, nrow = length(target), ncol = 3))
+              colnames(ci_table) <- c("Parameter", "est.ci.lower", "est.ci.upper")
               
-              # dataframe with non-NA estimates
-              results.est <- results[ii.est, ]
+              # add parameter column in results for later identification
+              results$Parameter <- paste(results$lhs, results$op, 
+                                         results$rhs, sep = " ")
               
-              # lower and upper bounds of 95% of non-NA parameter estimates
+              lapply(1:length(target), function(i) {
+                
+                # row names of results for a given parameter
+                ii <- seq(from = i, to = dim(results)[1], by = length(target))
+                
+                # row names of results for a given parameter with non-NA estimates
+                ii.est <- which(is.na(results$est) == F)[which(
+                  is.na(results$est) == F) %in% ii]
+                
+                # dataframe with non-NA estimates
+                results.est <- results[ii.est, ]
+                
+                # lower and upper bounds of 95% of non-NA parameter estimates
+                
+                if (round(length(results.est$est) * 0.025) == 0) {
+                  est.ci.lower <- "inf"
+                } else {
+                  est.ci.lower <- round(sort(results.est$est)[
+                    length(results.est$est) * 0.025], 2)
+                }
+                
+                if (round(length(results.est$est) * 0.975) == 0) {
+                  est.ci.upper <- "inf"
+                } else {
+                  est.ci.upper <- round(sort(results.est$est)[
+                    length(results.est$est) * 0.975], 2)
+                }
+                
+                
+                # number of iterations with significant p-values
+                n_sig <- length(which(results[ii, ]$pvalue <= input$p_alpha))
+                
+                # power (denominator = # all iterations)
+                power <- n_sig/(conv * input$ksim)
+                
+                # power (denominator = # all iterations)
+                powerksim <- n_sig/input$ksim
+                
+                # variance of power across simulations
+                n_sig_var <- power * conv * input$ksim * (1 - power)
+                
+                # print power table
+                powertable[i, "Parameter"] <<- results[i, "Parameter"]
+                powertable[i, "Value"] <<- hot_to_r(input$AnalysisMod)$Value[target[i]]
+                powertable[i, "Median"] <<- median(results[ii, ]$est)
+                powertable[i, "Power"] <<- power
+                powertable[i, "Power (All Cases)"] <<- powerksim
+                
+                # print CI table
+                ci_table[i, "Parameter"] <<- results.est[i, "Parameter"]
+                ci_table[i, "est.ci.lower"] <<- est.ci.lower
+                ci_table[i, "est.ci.upper"] <<- est.ci.upper
+                
+              })
               
-              if (round(length(results.est$est) * 0.025) == 0) {
-                est.ci.lower <- "inf"
-              } else {
-                est.ci.lower <- round(sort(results.est$est)[
-                  length(results.est$est) * 0.025], 2)
-              }
               
-              if (round(length(results.est$est) * 0.975) == 0) {
-                est.ci.upper <- "inf"
-              } else {
-                est.ci.upper <- round(sort(results.est$est)[
-                  length(results.est$est) * 0.975], 2)
-              }
+              # Render table of power analysis results
+              output$power <- renderTable({
+                powertable
+              }, digits = 2, align = "l")
               
+              # Add note on power based on convergence rate
+              output$powertable_note <- renderText({
+                paste('Convergence rate is ', round(conv, 3), '. ', 
+                      'Value is the population parameter value as set in Step 3. ',
+                      'Median is the median of simulated estimates of a parameter. ',
+                      'Power is estimated from all simulations with converged ',
+                      'models. Power (All Cases) is estimated from all ', 
+                      'simulations, including those with non-converged models ',
+                      '(which had no parameter estimates and were counted as ',
+                      'failure to reject the null).',
+                      sep = "")
+              })
               
-              # number of iterations with significant p-values
-              n_sig <- length(which(results[ii, ]$pvalue <= input$p_alpha))
+              # Select parameter for histogram displays
+              output$histograms <- renderUI(
+                selectInput("para_hist", 
+                            label = "Select parameter to display histograms",
+                            choices = powertable$Parameter)
+              )
               
-              # power (denominator = # all iterations)
-              power <- n_sig/(conv * input$ksim)
+              # Render histogram of p-values
+              output$histop <- renderPlot({
+                hist(results[results$Parameter == input$para_hist, ]$pvalue, 
+                     breaks = 50, 
+                     col = "#75dbd9", border = "white",
+                     xlab = "p-values of the Estimated Parameter",
+                     ylab = "Number of Simulated Samples",
+                     main = "Histogram of Estimated p-Values",
+                     xlim = c(0, 1))
+                abline(v = input$p_alpha, lwd = 2)
+              })
               
-              # power (denominator = # all iterations)
-              powerksim <- n_sig/input$ksim
+              # Footnote
+              output$histop_note <- renderText({
+                paste('Vertical solid line indicates alpha level.')
+              })
               
-              # variance of power across simulations
-              n_sig_var <- power * conv * input$ksim * (1 - power)
+              # Render histogram of parameter estimates
+              output$histoparam <- renderPlot({
+                hist(results[results$Parameter == input$para_hist, ]$est, breaks = 100, 
+                     col = "#75AADB", border = "white",
+                     xlab = "Estimated Parameter Value",
+                     ylab = "Number of Simulated Samples",
+                     main = "Histogram of Estimated Parameter Values")
+                abline(v = hot_to_r(input$AnalysisMod)$Value[which(
+                  hot_to_r(input$AnalysisMod)$Parameter == input$para_hist)], lwd = 2)
+                abline(v = powertable$Median[which(
+                  powertable$Parameter == input$para_hist)], lty = 3, lwd = 2)
+              })
               
-              # print power table
-              powertable[i, "Parameter"] <<- results[i, "Parameter"]
-              powertable[i, "Value"] <<- hot_to_r(input$AnalysisMod)$Value[target[i]]
-              powertable[i, "Median"] <<- median(results[ii, ]$est)
-              powertable[i, "Power"] <<- power
-              powertable[i, "Power (All Cases)"] <<- powerksim
-              
-              # print CI table
-              ci_table[i, "Parameter"] <<- results.est[i, "Parameter"]
-              ci_table[i, "est.ci.lower"] <<- est.ci.lower
-              ci_table[i, "est.ci.upper"] <<- est.ci.upper
-              
-            })
-            
-            
-            # Render table of power analysis results
-            output$power <- renderTable({
-              powertable
-            }, digits = 2, align = "l")
-            
-            # Add note on power based on convergence rate
-            output$powertable_note <- renderText({
-              paste('Convergence rate is ', round(conv, 3), '. ', 
-                    'Value is the population parameter value as set in Step 3. ',
-                    'Median is the median of simulated estimates of a parameter. ',
-                    'Power is estimated from all simulations with converged ',
-                    'models. Power (All Cases) is estimated from all ', 
-                    'simulations, including those with non-converged models ',
-                    '(which had no parameter estimates and were counted as ',
-                    'failure to reject the null).',
-                    sep = "")
-            })
-            
-            # Select parameter for histogram displays
-            output$histograms <- renderUI(
-              selectInput("para_hist", 
-                          label = "Select parameter to display histograms",
-                          choices = powertable$Parameter)
-            )
-            
-            # Render histogram of p-values
-            output$histop <- renderPlot({
-              hist(results[results$Parameter == input$para_hist, ]$pvalue, 
-                   breaks = 50, 
-                   col = "#75dbd9", border = "white",
-                   xlab = "p-values of the Estimated Parameter",
-                   ylab = "Number of Simulated Samples",
-                   main = "Histogram of Estimated p-Values",
-                   xlim = c(0, 1))
-              abline(v = input$p_alpha, lwd = 2)
-            })
-            
-            # Footnote
-            output$histop_note <- renderText({
-              paste('Vertical solid line indicates alpha level.')
-            })
-            
-            # Render histogram of parameter estimates
-            output$histoparam <- renderPlot({
-              hist(results[results$Parameter == input$para_hist, ]$est, breaks = 100, 
-                   col = "#75AADB", border = "white",
-                   xlab = "Estimated Parameter Value",
-                   ylab = "Number of Simulated Samples",
-                   main = "Histogram of Estimated Parameter Values")
-              abline(v = hot_to_r(input$AnalysisMod)$Value[which(
-                hot_to_r(input$AnalysisMod)$Parameter == input$para_hist)], lwd = 2)
-              abline(v = powertable$Median[which(
-                powertable$Parameter == input$para_hist)], lty = 3, lwd = 2)
-            })
-            
-            # Footnote
-            output$histoparam_note <- renderText({
-              paste('95% of parameter estimates fall within the interval [',
-                    ci_table[ci_table$Parameter == input$para_hist, ]$est.ci.lower,
-                    ', ', 
-                    ci_table[ci_table$Parameter == input$para_hist, ]$est.ci.upper,
-                    ']. Vertical solid line ',
-                    'indicates the population value you set for the parameter; ',
-                    'vertical dotted line indicates the median of parameter ',
-                    'estimates from the simulated samples.', sep = "")
-            })
+              # Footnote
+              output$histoparam_note <- renderText({
+                paste('95% of parameter estimates fall within the interval [',
+                      ci_table[ci_table$Parameter == input$para_hist, ]$est.ci.lower,
+                      ', ', 
+                      ci_table[ci_table$Parameter == input$para_hist, ]$est.ci.upper,
+                      ']. Vertical solid line ',
+                      'indicates the population value you set for the parameter; ',
+                      'vertical dotted line indicates the median of parameter ',
+                      'estimates from the simulated samples.', sep = "")
+              })
+            }
           })
         }
-        
       }
     }
   }
