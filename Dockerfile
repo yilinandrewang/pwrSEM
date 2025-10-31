@@ -5,7 +5,7 @@ FROM rocker/rstudio:4.2.2
 # try to run in Rstudio image
 # Install required libraries
 RUN apt-get update && \
-  apt-get install -y libglpk-dev && \
+  apt-get install -y libglpk-dev texlive texlive-latex-extra pandoc && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/*
 
@@ -16,6 +16,10 @@ RUN install2.r --error \
   semPlot \
   rhandsontable \
   semTools \
-  tidyr
+  tidyr \
+  ggplot2 \
+  rmarkdown \
+  knitr \
+  qgraph
 
 ENV PROJECT_ROOT=/home/rstudio/src

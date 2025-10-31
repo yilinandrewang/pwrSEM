@@ -1,0 +1,160 @@
+---
+title: "PwrSEM Simulation Results"
+subtitle: "Shiny App developed by Andre Wang"
+output: pdf_document
+date: '`r format(Sys.time(), "%B %d, %Y")`'
+params:
+  model: null
+  model_plot: null
+  parameter_table: null
+  sample_size: NA
+  alpha_lvl: NA
+  seed: NA
+  nsims: NA
+  power_table: NA
+  power_note: NA
+  data: null
+  histop: null      # selected parameter for histogram
+  p_alpha: NA       # alpha cutoff for vertical line
+  histop_note: NA
+  histoparam_note: NA
+
+
+---
+
+```{r setup, warning=FALSE, message=FALSE, echo=FALSE}
+options(knitr.table.format = 'markdown')
+library(knitr)
+library(ggplot2)
+```
+
+
+Below are the results from a power analysis for parameter estimation in structural equation modeling. If you encounter any problems please visit our GitHub page (https://github.com/yilinandrewang/pwrSEM) to raise the issue.
+
+## Step 1: Analysis Model
+
+```{r, echo=FALSE}
+if (!is.null(params$model)) {
+  cat(params$model)
+} else {
+  cat("No plot available. \n")
+}
+```
+
+## Step 2: Visualize Model
+
+```{r, echo=FALSE, out.width = "100%"}
+if (!is.null(params$model_plot)) {
+  knitr::include_graphics(params$model_plot)
+} else {
+  cat("No plot available. \n")
+}
+```
+
+## Step 3: Parameter Table
+
+```{r, echo=FALSE}
+if (!is.null(params$parameter_table)) {
+  kable(params$parameter_table, caption = "Parameter Table for model")
+} else {
+  cat("No table available.\n")
+}
+```
+
+## Step 4: Estimate Power
+
+**Sample Size**
+```{r, echo=FALSE}
+print(params$sample_size)
+```
+
+**Alpha Level**
+```{r, echo=FALSE}
+cat(params$alpha_lvl)
+```
+
+**Seed for Simulations**
+```{r, echo=FALSE}
+cat(params$seed)
+```
+
+**Number of Simulations**
+```{r, echo=FALSE}
+cat(params$nsims)
+```
+
+**Power Table**
+```{r, echo=FALSE}
+# Use the passed parameter to render the table
+if (!is.null(params$power_table)) {
+  kable(params$power_table, digits = 2, align = "l", caption = "Power Table")
+  cat(paste(strwrap(params$power_note, width = 70), collapse = "\n"))
+} else {
+  cat("No table available.\n")
+}
+```
+
+**Histograms**
+```{r, echo=FALSE, out.width = "100%"}
+# Use the passed parameter to render the histogram
+if (!is.null(params$data) && !is.null(params$histop)) {
+  # Filter data by the selected parameter
+  filtered_data <- subset(params$data, Parameter == params$histop)
+
+  # Create histogram plot of p-values
+  hist_plot <- ggplot(filtered_data, aes(x = pvalue)) +
+    geom_histogram(binwidth = 0.02, boundary = 0, bins = 50, fill = "#75dbd9", color = "white") +
+    geom_vline(xintercept = params$alpha_lvl, color = "red", linewidth = 1) +
+    labs(
+      title = paste("Histogram of Estimated p-Values for", params$histop),
+      x = "p-values of the Estimated Parameter",
+      y = "Number of Simulated Samples"
+    ) +
+    xlim(0, 1) +
+    theme_minimal()
+
+  temp <- hist(filtered_data$pvalue,
+                     breaks = 50,
+                     col = "#75dbd9", border = "white",
+                     xlab = "p-values of the Estimated Parameter",
+                     ylab = "Number of Simulated Samples",
+                     main = "Histogram of Estimated p-Values",
+                     xlim = c(0, 1))
+  temp_abline <- abline(v = params$alpha_lvl, lwd = 2)
+
+  print(temp)
+  print(temp_abline)
+  print(hist_plot)
+} else {
+  cat("No data or parameter specified for histogram.\n")
+}
+
+if (!is.null(params$data) && !is.null(params$histop)) {
+  # Filter estimated values for the selected parameter
+  filtered_data <- subset(params$data, Parameter == params$histop)
+  est_values <- filtered_data$est
+
+  # Extract vertical line values from the parameter table (converted from hot_to_r in Shiny)
+  mod_df <- params$parameter_table
+  line1 <- mod_df$Value[which(mod_df$Parameter == params$histop)]
+
+  # Extract median values from power_table
+  power_df <- params$power_table
+  line2 <- power_df$Median[which(power_df$Parameter == params$histop)]
+
+  # Plot
+  temp <- hist(filtered_data$est, breaks = 100,
+        col = "#75AADB", border = "white",
+        xlab = "Estimated Parameter Value",
+        ylab = "Number of Simulated Samples",
+        main = "Histogram of Estimated Parameter Values")
+  #abline(v = hot_to_r(input$AnalysisMod)$Value[which(
+  #  hot_to_r(input$AnalysisMod)$Parameter == input$para_hist)], lwd = 2)
+  #abline(v = temp_powertable$Median[which(
+  #  temp_powertable$Parameter == input$para_hist)], lty = 3, lwd = 2)
+
+  print(temp)
+} else {
+  cat("No data or parameter specified for histogram.\n")
+}
+```
