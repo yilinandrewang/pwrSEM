@@ -162,107 +162,58 @@ server <- function(input, output, session) {
   # Create downloadable report in markdown TINYTEX NEEDS TO BE INSTALLED
   output$report <- downloadHandler(
     filename = function() {
-      paste("report-", Sys.Date(), ".pdf", sep = "")
+      paste0("pwrSEM-report-", Sys.Date(), ".pdf")
     },
     content = function(file) {
-      # Copy the report file to a temporary directory before processing it, in
-      # case we don't have write permissions to the current working dir (which
-      # can happen when deployed).
+
+      # Copy report template to a temp dir (needed for deployment)
       tempReport <- file.path(tempdir(), "report.Rmd")
       file.copy("report.Rmd", tempReport, overwrite = TRUE)
 
-      print("results")
-      print(results)
-
-      # Save the plot from mg()[[2]] as an image
+      # Save the path-diagram plot as a PNG
       plot_file <- file.path(tempdir(), "plot.png")
       png(plot_file, width = 800, height = 600)
-      qgraph(mg()[[2]], edge.color = 'black', curvature = 3,
-             structural = structural(), sizeMan = input$sizeMan,
-             sizeLat = input$sizeLat, rotation = input$rotation)
+      qgraph(mg()[[2]],
+            edge.color = "black",
+            curvature   = 3,
+            structural  = structural(),
+            sizeMan     = input$sizeMan,
+            sizeLat     = input$sizeLat,
+            rotation    = input$rotation)
       dev.off()
 
-      # Save the p-values histogram as an image
-      # histop_file <- file.path(tempdir(), "histop.png")
+      # Snapshot current results (avoids repeated reactive reads)
+      res <- results()
 
-      # histop_val <- results()$histop
-      # value <- if (length(histop_val) == 0 || isTRUE(histop_val == "")) {
-      #   numeric(0)
-      # } else {
-      #   as.numeric(histop_val)
-      # }
-      # png(histop_file, width = 800, height = 600)
-      # tryCatch({
-      #   hist(value,
-      #         breaks = 50,
-      #         col = "#75dbd9", border = "white",
-      #         xlab = "p-values of the Estimated Parameter",
-      #         ylab = "Number of Simulated Samples",
-      #         main = "Histogram of Estimated p-Values",
-      #         xlim = c(0, 1))
-      #   abline(v = input$p_alpha, lwd = 2)
-      #   dev.off()
-      # }, error = function(e) {
-      #   # Handle error: plot a message
-      #   message("Error plotting histogram:", e$message)
-      #   dev.off()
-      # })
-
-
-      # # Save the estimated parameter values histogram as an image
-      # histoparam_file <- file.path(tempdir(), "histoparam.png")
-      # png(histoparam_file, width = 800, height = 600)
-      # histoparam_val <- results()$histoparam
-      # value <- if (length(histoparam_val) == 0 || isTRUE(histoparam_val == "")) {
-      #   numeric(0)
-      # } else {
-      #   as.numeric(histoparam_val)
-      # }
-      # tryCatch({
-      #   hist(value,
-      #         breaks = 100,
-      #         col = "#75AADB", border = "white",
-      #         xlab = "Estimated Parameter Value",
-      #         ylab = "Number of Simulated Samples",
-      #         main = "Histogram of Estimated Parameter Values")
-      #   abline(v = hot_to_r(input$AnalysisMod)$Value[which(
-      #     hot_to_r(input$AnalysisMod)$Parameter == input$para_hist)], lwd = 2)
-      #   abline(v = results()$powertable$Median[which(
-      #     results()$powertable$Parameter == input$para_hist)], lty = 3, lwd = 2)
-      #   dev.off()
-      # }, error = function(e) {
-      #   # Handle error: plot a message
-      #   message("Error plotting histogram:", e$message)
-      #   dev.off()
-      # })
-
-
-      #list(powertable = NULL, power_note = NULL, histop = NULL, histop_note = NULL, histoparam = NULL, histoparam_note = NULL)
-
-      # Set up parameters to pass to Rmd document
-      params <- list(model = input$text1,
-                    model_plot = plot_file,
-                    parameter_table = hot_to_r(input$AnalysisMod),
-                    sample_size = input$sampleN,
-                    alpha_lvl = input$p_alpha,
-                    seed=input$seed,
-                    nsims=input$ksim,
-                    power_table=results()$powertable,
-                    power_note=results()$power_note,
-                    data=results()$data,
-                    histop=results()$histop,
-                    p_alpha=results()$p_alpha,
-                    histop_note=results()$histop_note,
-                    histoparam_note=results()$histoparam_note)
-
-      # Knit the document, passing in the `params` list, and eval it in a
-      # child of the global environment (this isolates the code in the document
-      # from the code in this app).
-      rmarkdown::render(tempReport, output_file = file,
-                        params = params,
-                        envir = new.env(parent = globalenv())
+      # Build params list for the Rmd
+      params <- list(
+        model           = input$text1,
+        model_plot      = plot_file,
+        parameter_table = hot_to_r(input$AnalysisMod),
+        sample_size     = input$sampleN,
+        alpha_lvl       = input$p_alpha,
+        seed            = input$seed,
+        nsims           = input$ksim,
+        power_table     = res$powertable,
+        power_note      = res$power_note,
+        data            = res$data,           # full sim_results data frame
+        histop          = res$histop,         # default selected param (unused now — report loops all)
+        p_alpha         = res$p_alpha,
+        histop_note     = res$histop_note,
+        histoparam_note = res$histoparam_note, # named character vector
+        ci_table        = res$ci_table
       )
-    })
+
+      rmarkdown::render(
+        tempReport,
+        output_file = file,
+        params      = params,
+        envir       = new.env(parent = globalenv())
+      )
+    }
+  )
+
+
 }
 
 
